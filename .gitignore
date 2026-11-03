@@ -14,3 +14,6 @@ REQUIREMENTS.md
 __pycache__/
 *.py[cod]
 
+# Local SQLite Database
+*.sqlite3
+*.db
