@@ -24,3 +24,7 @@ TEMPERATURE_MAX_VALUE = float(os.getenv("TEMPERATURE_MAX_VALUE", 85.0))
 DEFAULT_HISTORY_LIMIT = int(os.getenv("DEFAULT_HISTORY_LIMIT", 100))
 MAX_HISTORY_LIMIT = int(os.getenv("MAX_HISTORY_LIMIT", 1000))
 
+# Telemetry float comparison rounding precision (decimal places)
+FLOAT_PRECISION_DECIMALS = int(os.getenv("FLOAT_PRECISION_DECIMALS", 2))
+
+

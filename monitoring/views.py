@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .constants import (
     DEFAULT_HISTORY_LIMIT,
+    FLOAT_PRECISION_DECIMALS,
     HEAT_STRESS_CONSECUTIVE_READINGS,
     HEAT_STRESS_TEMP_DELTA_THRESHOLD,
     MAX_HISTORY_LIMIT,
@@ -15,12 +16,12 @@ from .serializers import MeasurementSerializer
 
 def is_telemetry_identical(record, data):
     """
-    Compares telemetry fields with rounding to mitigate IEEE 754 precision drift.
+    Compares telemetry fields with configurable rounding to mitigate IEEE 754 precision drift.
     """
     return (
-        round(record.air_temperature, 2) == round(data["air_temperature"], 2)
-        and round(record.leaf_temperature, 2) == round(data["leaf_temperature"], 2)
-        and round(record.soil_moisture, 2) == round(data["soil_moisture"], 2)
+        round(record.air_temperature, FLOAT_PRECISION_DECIMALS) == round(data["air_temperature"], FLOAT_PRECISION_DECIMALS)
+        and round(record.leaf_temperature, FLOAT_PRECISION_DECIMALS) == round(data["leaf_temperature"], FLOAT_PRECISION_DECIMALS)
+        and round(record.soil_moisture, FLOAT_PRECISION_DECIMALS) == round(data["soil_moisture"], FLOAT_PRECISION_DECIMALS)
     )
 
 
