@@ -39,7 +39,7 @@ The lifecycle of an incoming telemetry packet traverses a strictly gated, defens
 │    - Strips unauthorized fields (Mass Assignment Guard)     │
 │    - Validates ISO 8601 string + strict timezone ('Z' / ±HH)│
 │    - Rejects Epoch 1970 (uninitialized RTC clock)           │
-│    - Rejects Future Timestamps (> 1 min clock drift margin) │
+│    - Authoritative Event-Time (No server clock dependency)  │
 │    - Physical Envelope: Air/Leaf Temp (-40°C to +85°C)      │
 │    - Physical Envelope: Soil Moisture (0.0% to 100.0%)      │
 └──────────────────────────────┬──────────────────────────────┘

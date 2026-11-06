@@ -118,7 +118,7 @@ python manage.py test
 - ✅ `test_soil_moisture_valid_boundary_values`: Strict BVA validation for $0.0\%$, $0.1\%$, $99.9\%$, $100.0\%$.
 - ✅ `test_soil_moisture_invalid_boundary_values`: Rejection of out-of-bounds soil moisture ($-0.1\%$, $101.0\%$).
 - ✅ `test_temperature_boundary_validation`: Rejection of unphysical temperature noise ($< -40^\circ\text{C}$ or $> 85^\circ\text{C}$).
-- ✅ `test_reject_unrealistic_timestamps`: Uninitialized RTC (Epoch 1970) and future clock skew rejection.
+- ✅ `test_reject_uninitialized_rtc_epoch_1970`: Uninitialized RTC (Epoch 1970) hardware rejection.
 - ✅ `test_idempotent_duplicate_handling`: Network retries acknowledge existing data (`200 OK`) without duplicating records.
 - ✅ `test_conflicting_duplicate_preserves_first_write`: Same timestamp with conflicting values returns `409 Conflict`.
 - ✅ `test_race_condition_conflict_handling_under_integrity_error`: Database `IntegrityError` safely verifies conflict under race conditions.

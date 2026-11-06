@@ -1,8 +1,6 @@
 import re
 from rest_framework import serializers
-from django.utils import timezone
 from .constants import (
-    CLOCK_DRIFT_TOLERANCE_MINUTES,
     TEMPERATURE_MIN_VALUE,
     TEMPERATURE_MAX_VALUE,
 )
@@ -42,12 +40,6 @@ class MeasurementSerializer(serializers.ModelSerializer):
         if value.timestamp() <= 0:
             raise serializers.ValidationError(
                 "Timestamp indicates an uninitialized hardware clock (Epoch 1970)."
-            )
-
-        now_with_drift = timezone.now() + timezone.timedelta(minutes=CLOCK_DRIFT_TOLERANCE_MINUTES)
-        if value > now_with_drift:
-            raise serializers.ValidationError(
-                f"Timestamp cannot be in the future (exceeds {CLOCK_DRIFT_TOLERANCE_MINUTES}-minute clock drift margin)."
             )
 
         return value

@@ -12,7 +12,6 @@ from .constants import (
     TEMPERATURE_MIN_VALUE,
     TEMPERATURE_MAX_VALUE,
     DEFAULT_HISTORY_LIMIT,
-    CLOCK_DRIFT_TOLERANCE_MINUTES,
 )
 
 
@@ -93,19 +92,13 @@ class TelemetryAPITestCase(APITestCase):
             self.assertIn("soil_moisture", res.data)
         self.assertEqual(Measurement.objects.count(), 0)
 
-    def test_reject_unrealistic_timestamps(self):
-        """Test rejection of uninitialized RTC (Epoch 1970) and distant future timestamps."""
-        # 1. Uninitialized RTC Epoch 1970
+    def test_reject_uninitialized_rtc_epoch_1970(self):
+        """Test rejection of uninitialized hardware RTC clock (Epoch 1970)."""
         payload = self.valid_payload.copy()
         payload["timestamp"] = "1970-01-01T00:00:00Z"
         res = self.client.post(self.ingest_url, payload, format="json")
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
-
-        # 2. Distant future timestamp (tomorrow)
-        future_ts = (timezone.now() + timezone.timedelta(days=1)).isoformat()
-        payload["timestamp"] = future_ts
-        res_future = self.client.post(self.ingest_url, payload, format="json")
-        self.assertEqual(res_future.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("timestamp", res.data)
 
     # ==========================================
     # 2. Network Reliability & Idempotency Tests
