@@ -27,10 +27,10 @@ Agricultural field telemetry frequently suffers from intermittent network covera
    - Protected against IEEE 754 floating-point precision drift (`round(val, 2)`), concurrency race conditions, and unbounded memory consumption (`?limit=N`).
 
 2. **Selected Additional Task: Option A — Device Simulator in C:**
-   - Standard C99 edge simulator (`simulator/simulator.c`) that models 3 distinct devices across 9 deterministic network and hardware fault scenarios.
-   - Emits dynamic ISO 8601 UTC timestamps (`time(NULL)` + `gmtime_r` / `gmtime_s`) into `telemetry_stream.json`.
+   - Modular C99 edge simulator (`simulator/main.c`, `simulator/src/`) that models 3 distinct devices across 10 deterministic network and hardware fault scenarios.
+   - Emits dynamic ISO 8601 UTC Zulu timestamps and local timezone offsets (`+06:00`) into `telemetry_stream.json`.
    - Zero-dependency Python bridge (`simulator/bridge.py`) dispatches packets via HTTP POST and verifies live warning engine state.
-   - Complete architectural analysis of **Reliability Division of Responsibilities** (Device vs. Backend vs. Shared) in [`simulator/README.md`](file:///Users/shajninhaqueaishy/AI-Work/CredoSense-Assessment/simulator/README.md).
+   - Complete technical architecture and specifications in [`simulator/DESIGN.md`](file:///Users/shajninhaqueaishy/AI-Work/CredoSense-Assessment/simulator/DESIGN.md) and 28-point boundary test matrix in [`docs/TEST_SPECIFICATION.md`](file:///Users/shajninhaqueaishy/AI-Work/CredoSense-Assessment/docs/TEST_SPECIFICATION.md).
 
 3. **Technical Explanation & Review Report:**
    - Detailed answers to all assessment questions in [`docs/EXPLANATION.md`](file:///Users/shajninhaqueaishy/AI-Work/CredoSense-Assessment/docs/EXPLANATION.md).
@@ -150,8 +150,8 @@ make run
 
 **macOS / Linux:**
 ```bash
-# 1. Compile C program
-gcc -Wall -Wextra -O2 -std=c99 simulator/simulator.c -o simulator/simulator
+# 1. Compile C program using Makefile or gcc
+cd simulator && make && cd ..
 
 # 2. Run simulator to generate JSON stream
 ./simulator/simulator
@@ -163,7 +163,7 @@ python3 simulator/bridge.py
 **Windows:**
 ```powershell
 # 1. Compile C program
-gcc -Wall -Wextra -O2 -std=c99 simulator/simulator.c -o simulator/simulator.exe
+gcc -Wall -Wextra -O2 -std=c99 simulator/main.c simulator/src/*.c -o simulator/simulator.exe
 
 # 2. Run simulator
 .\simulator\simulator.exe
@@ -323,13 +323,18 @@ CredoSense-Assessment/
 │   ├── constants.py              # Centralized agronomic & physical thresholds
 │   └── tests.py                  # 18 comprehensive automated test cases
 ├── simulator/                    # Task 2: Option A — C Device Simulator
-│   ├── simulator.c               # Standard C99 multi-device telemetry generator
+│   ├── main.c                    # Minimal entrypoint
+│   ├── Makefile                  # Cross-platform build automation
 │   ├── bridge.py                 # Zero-dependency Python HTTP ingestion bridge
-│   ├── Makefile                  # Cross-platform build & run automation
-│   ├── README.md                 # Detailed division of reliability responsibilities
-│   └── DESIGN.md                 # Original architecture specification document
+│   ├── DESIGN.md                 # Architecture & design specification
+│   └── src/                      # Modular C implementation
+│       ├── packet.h              # Telemetry struct & prototype declarations
+│       ├── packet.c              # Golden packet mutation & scenario generator
+│       ├── app.h                 # Application config macros & I/O interface
+│       └── app.c                 # Path resolver, JSON stream writer & CLI UI
 └── docs/                         # Technical documentation & supporting files
     ├── EXPLANATION.md            # Technical review questionnaire & decisions
+    ├── TEST_SPECIFICATION.md     # 28-point Boundary Value Analysis (BVA) test matrix
     └── supporting_documents/     # Reference RFC standards (RFC 5905, RFC 1350)
 ```
 

@@ -1,37 +1,13 @@
-# ============================================================================
-# Makefile for C IoT Edge Telemetry Simulator (Cross-Platform)
-# ============================================================================
-
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -O2 -std=c99
-SRC = simulator.c
-JSON_OUT = telemetry_stream.json
+CFLAGS ?= -Wall -Wextra -std=c99 -pedantic -O2
+TARGET = simulator
 
-ifeq ($(OS),Windows_NT)
-    TARGET = simulator.exe
-    RM = del /f /q 2>nul || rm -f
-    PYTHON ?= python
-    RUN_TARGET = $(TARGET)
-else
-    TARGET = simulator
-    RM = rm -f
-    PYTHON ?= python3
-    RUN_TARGET = ./$(TARGET)
-endif
+all: $(TARGET)
 
-.PHONY: all build run clean
-
-all: build
-
-build: $(TARGET)
-
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
-
-run: build
-	$(RUN_TARGET)
-	$(PYTHON) bridge.py
+$(TARGET): simulator.c
+	$(CC) $(CFLAGS) simulator.c -o $(TARGET)
 
 clean:
-	$(RM) $(TARGET) $(JSON_OUT)
+	rm -f $(TARGET) $(TARGET).exe *.o telemetry_stream.json simulator/telemetry_stream.json
 
+.PHONY: all clean
