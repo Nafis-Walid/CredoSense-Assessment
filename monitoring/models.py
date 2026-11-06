@@ -1,5 +1,11 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from .constants import (
+    HEAT_STRESS_TEMP_DELTA_THRESHOLD,
+    SOIL_MOISTURE_LOW_THRESHOLD,
+    SOIL_MOISTURE_MAX_VALUE,
+    SOIL_MOISTURE_MIN_VALUE,
+)
 
 
 class Measurement(models.Model):
@@ -11,8 +17,11 @@ class Measurement(models.Model):
     air_temperature = models.FloatField(help_text="Air temperature in °C")
     leaf_temperature = models.FloatField(help_text="Leaf temperature in °C")
     soil_moisture = models.FloatField(
-        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
-        help_text="Soil moisture in percentage (0.0% - 100.0%)"
+        validators=[
+            MinValueValidator(SOIL_MOISTURE_MIN_VALUE),
+            MaxValueValidator(SOIL_MOISTURE_MAX_VALUE),
+        ],
+        help_text=f"Soil moisture percentage ({SOIL_MOISTURE_MIN_VALUE}% - {SOIL_MOISTURE_MAX_VALUE}%)"
     )
     received_at = models.DateTimeField(
         auto_now_add=True,
@@ -36,10 +45,10 @@ class Measurement(models.Model):
 
     @property
     def is_low_soil_moisture(self) -> bool:
-        """Requirement: Soil moisture below 20%."""
-        return self.soil_moisture < 20.0
+        """Dynamic check against low soil moisture threshold."""
+        return self.soil_moisture < SOIL_MOISTURE_LOW_THRESHOLD
 
     @property
     def satisfies_heat_stress_threshold(self) -> bool:
-        """Requirement threshold: Leaf temp >= air temp + 4.0°C."""
-        return self.leaf_temperature >= (self.air_temperature + 4.0)
+        """Dynamic check against heat stress temperature delta threshold."""
+        return self.leaf_temperature >= (self.air_temperature + HEAT_STRESS_TEMP_DELTA_THRESHOLD)

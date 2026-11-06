@@ -17,3 +17,22 @@ __pycache__/
 # Local SQLite Database
 *.sqlite3
 *.db
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# C Simulator Compiled Binaries & Artifacts
+simulator/simulator
+*.exe
+*.o
+*.out
+*.dSYM/
+telemetry_stream.json
+simulator/telemetry_stream.json
+
