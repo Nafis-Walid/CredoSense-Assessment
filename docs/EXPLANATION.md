@@ -180,7 +180,7 @@ However, I followed a strict engineering rule: **"Never trust AI-generated code 
 
 - **Terminal Verification:** Whenever the AI suggested validation logic or code patterns, I manually tested failure scenarios in the terminal—sending invalid dates, missing timezones, and extreme temperatures to confirm that filters behaved as expected.
 - **Handling Floating-Point Precision:** When checking duplicate records, I noticed that raw float comparisons (`==`) could fail due to IEEE 754 precision drift. I explicitly introduced `round(val, 2)` to make duplicate detection reliable.
-- **Automated Regression Suite:** All core behaviors, boundary values, and race conditions are guarded by **36 automated test vectors across 13 test suites** (mapped 1-to-1 to our test specification matrix), all of which run and pass cleanly via `python manage.py test`.
+- **Automated Regression Suite:** All core behaviors, boundary values, and race conditions are guarded by **36 automated test vectors across 13 test suites** (spanning Categories A through F), all of which run and pass cleanly via `python manage.py test`.
 - **C Simulator Verification:** Built the C simulator with `-Wall -Wextra -std=c99 -pedantic -O2` flags with zero compiler warnings, and verified all 9 deterministic scenarios end-to-end through the Python bridge.
 
 ---

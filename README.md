@@ -226,7 +226,7 @@ curl -X GET "http://127.0.0.1:8000/api/devices/sensor-node-01/history/?limit=2"
 
 ## 5. Automated Tests
 
-The test suite is structured as a modular package (`monitoring/tests/`) with 13 test methods executing and asserting all **36 test vectors** defined in [`docs/TEST_SPECIFICATION.md`](file:///Users/shajninhaqueaishy/AI-Work/CredoSense-Assessment/docs/TEST_SPECIFICATION.md) (leveraging Python's standard library `self.subTest()` for table-driven edge verification):
+The test suite is structured as a modular package (`monitoring/tests/`) with 13 test methods executing and asserting all **36 boundary test vectors** across categories A to F (leveraging Python's standard library `self.subTest()` for table-driven edge verification):
 
 ```bash
 python manage.py test
