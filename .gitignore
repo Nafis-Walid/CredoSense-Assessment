@@ -5,11 +5,6 @@
 .venv/
 
 
-#Local Files
-AGENTS.md
-INTERVIEW_NOTES.md
-REQUIREMENTS.md
-
 # Python Cache
 __pycache__/
 *.py[cod]
