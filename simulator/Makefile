@@ -11,6 +11,6 @@ run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(TARGET).exe *.o telemetry_stream.json simulator/telemetry_stream.json
+	rm -f $(TARGET) $(TARGET).exe *.o telemetry_stream.json
 
 .PHONY: all run clean

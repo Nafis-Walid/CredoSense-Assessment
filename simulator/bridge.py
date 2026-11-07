@@ -15,16 +15,10 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/measurements/")
 
 
 def resolve_stream_file():
-    """Resolves telemetry_stream.json whether executed from root or simulator directory."""
-    candidates = [
-        os.getenv("TELEMETRY_STREAM_FILE"),
-        os.path.join(os.path.dirname(__file__), "telemetry_stream.json"),
-        os.path.join(os.path.dirname(__file__), "..", "telemetry_stream.json"),
-        "telemetry_stream.json",
-    ]
-    for path in candidates:
-        if path and os.path.exists(path):
-            return path
+    """Resolves telemetry_stream.json inside simulator directory or from env override."""
+    env_path = os.getenv("TELEMETRY_STREAM_FILE")
+    if env_path and os.path.exists(env_path):
+        return env_path
     return os.path.join(os.path.dirname(__file__), "telemetry_stream.json")
 
 

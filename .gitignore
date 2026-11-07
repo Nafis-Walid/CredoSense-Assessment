@@ -28,6 +28,5 @@ simulator/simulator
 *.o
 *.out
 *.dSYM/
-telemetry_stream.json
 simulator/telemetry_stream.json
 
