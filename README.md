@@ -55,7 +55,7 @@ The application runs locally without any paid services or external database serv
 
 ```bash
 # 1. Clone repository and enter project
-git clone <repo-url>
+git clone https://github.com/Nafis-Walid/CredoSense-Assessment.git
 cd CredoSense-Assessment
 
 # 2. Set up virtual environment and install dependencies
