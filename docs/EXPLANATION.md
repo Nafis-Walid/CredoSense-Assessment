@@ -2,7 +2,7 @@
 
 **Candidate:** Md Nafis Walid  
 **Target Position:** Software Engineer at CredoSense  
-**Assessment:** Section 3 ("Explain your work") & Task 2: Option A ("Device simulator in C")  
+**Assessment:** Section 3  
 
 ---
 
