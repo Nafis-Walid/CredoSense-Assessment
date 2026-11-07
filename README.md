@@ -246,4 +246,4 @@ python manage.py test
 
 For detailed answers to the assessment questionnaire—including what was unfamiliar, how an incoming measurement moves through the application, an investigated bug, architectural trade-offs, production improvements, AI verification methodology, and the division of reliability responsibilities:
 
-👉 **See [`docs/EXPLANATION.md`](file:///Users/shajninhaqueaishy/AI-Work/CredoSense-Assessment/docs/EXPLANATION.md)**
+👉 **See [`docs/EXPLANATION.md`](docs/EXPLANATION.md)**
