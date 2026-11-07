@@ -25,35 +25,20 @@
 #include <string.h>
 #include <time.h>
 
-#define MAX_DEVICE_ID_LEN   64
-#define MAX_TIMESTAMP_LEN   32
-#define MAX_TAG_LEN         80
-#define MAX_SCENARIOS       16
-
 typedef struct {
-    char device_id[MAX_DEVICE_ID_LEN];
-    char timestamp_iso[MAX_TIMESTAMP_LEN];
-    double air_temperature;
-    double leaf_temperature;
-    double soil_moisture;
-    char scenario_tag[MAX_TAG_LEN];
-    int expected_status;
-} TelemetryPacket;
-
-typedef struct {
-    const char *scenario_tag;   /* Description */
+    const char *tag;
     int time_delta_sec;         /* Relative time delta in seconds */
     int tz_offset_mins;         /* Timezone offset minutes (0 = UTC, +360 = +06:00) */
     double air_temp;            /* Air temperature (°C) */
     double leaf_temp;           /* Leaf temperature (°C) */
     double soil_moisture;       /* Soil moisture (%) */
     int expected_status;        /* Target HTTP status (201, 200, 400, 409) */
-} ScenarioDescriptor;
+} Scenario;
 
 /**
  * The 5 Core Assessment Categories:
  */
-static const ScenarioDescriptor g_scenarios[] = {
+static const Scenario g_scenarios[] = {
     /* 1. Normal Readings */
     { "Nominal Telemetry (UTC Zulu)",              -180,    0, 24.5, 23.8, 45.0, 201 },
     { "Local Offset (+06:00 Timezone Telemetry)",  -120, +360, 24.5, 23.8, 45.0, 201 },
@@ -99,23 +84,14 @@ static void format_iso8601(time_t epoch, int tz_mins, char *out, size_t size) {
 }
 
 /**
- * Resolves output file path: ENV -> default path -> fallback.
+ * Writes formatted JSON array directly to specified destination stream.
  */
-static const char *get_output_path(void) {
-    const char *env = getenv("TELEMETRY_STREAM_FILE");
-    if (env && *env) return env;
-
-    FILE *fp = fopen("simulator/telemetry_stream.json", "a");
-    if (fp) { fclose(fp); return "simulator/telemetry_stream.json"; }
-    return "telemetry_stream.json";
-}
-
-/**
- * Streams formatted JSON array to specified destination (file or stdout).
- */
-static void write_json(FILE *fp, const TelemetryPacket *p, int count) {
+static void write_telemetry_json(FILE *fp, const char *device_id, time_t now) {
+    char ts[32];
     fprintf(fp, "[\n");
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; g_scenarios[i].tag != NULL; i++) {
+        const Scenario *s = &g_scenarios[i];
+        format_iso8601(now + s->time_delta_sec, s->tz_offset_mins, ts, sizeof(ts));
         fprintf(fp, "  {\n"
                     "    \"device_id\": \"%s\",\n"
                     "    \"timestamp\": \"%s\",\n"
@@ -125,51 +101,30 @@ static void write_json(FILE *fp, const TelemetryPacket *p, int count) {
                     "    \"scenario_tag\": \"%s\",\n"
                     "    \"expected_status\": %d\n"
                     "  }%s\n",
-                p[i].device_id, p[i].timestamp_iso,
-                p[i].air_temperature, p[i].leaf_temperature, p[i].soil_moisture,
-                p[i].scenario_tag, p[i].expected_status,
-                (i + 1 < count) ? "," : "");
+                device_id, ts, s->air_temp, s->leaf_temp, s->soil_moisture,
+                s->tag, s->expected_status,
+                (g_scenarios[i + 1].tag != NULL) ? "," : "");
     }
     fprintf(fp, "]\n");
 }
 
 int main(int argc, char *argv[]) {
     const char *device_id = (argc > 1) ? argv[1] : "sensor-node-01";
-    const char *out_path = get_output_path();
+    const char *out_path = "telemetry_stream.json";
     time_t now = time(NULL);
-    TelemetryPacket packets[MAX_SCENARIOS];
-    int count = 0;
-
-    for (int i = 0; g_scenarios[i].scenario_tag != NULL && count < MAX_SCENARIOS; i++) {
-        const ScenarioDescriptor *s = &g_scenarios[i];
-        TelemetryPacket *p = &packets[count++];
-
-        strncpy(p->device_id, device_id, sizeof(p->device_id) - 1);
-        p->device_id[sizeof(p->device_id) - 1] = '\0';
-
-        format_iso8601(now + s->time_delta_sec, s->tz_offset_mins, p->timestamp_iso, sizeof(p->timestamp_iso));
-
-        p->air_temperature = s->air_temp;
-        p->leaf_temperature = s->leaf_temp;
-        p->soil_moisture = s->soil_moisture;
-
-        strncpy(p->scenario_tag, s->scenario_tag, sizeof(p->scenario_tag) - 1);
-        p->scenario_tag[sizeof(p->scenario_tag) - 1] = '\0';
-
-        p->expected_status = s->expected_status;
-    }
 
     FILE *fp = fopen(out_path, "w");
     if (!fp) {
-        perror("[!] Failed to open output JSON file");
+        perror("[!] Failed to open output file");
         return EXIT_FAILURE;
     }
-    write_json(fp, packets, count);
+
+    write_telemetry_json(fp, device_id, now);
     fclose(fp);
 
     /* Stream clean JSON to stdout */
-    write_json(stdout, packets, count);
-    fprintf(stderr, "\n[+] Successfully generated %d packets into: %s\n", count, out_path);
+    write_telemetry_json(stdout, device_id, now);
+    fprintf(stderr, "\n[+] Successfully generated 9 packets into: %s\n", out_path);
 
     return EXIT_SUCCESS;
 }

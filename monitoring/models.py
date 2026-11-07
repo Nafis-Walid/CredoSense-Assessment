@@ -21,7 +21,7 @@ class Measurement(models.Model):
             MinValueValidator(SOIL_MOISTURE_MIN_VALUE),
             MaxValueValidator(SOIL_MOISTURE_MAX_VALUE),
         ],
-        help_text=f"Soil moisture percentage ({SOIL_MOISTURE_MIN_VALUE}% - {SOIL_MOISTURE_MAX_VALUE}%)"
+        help_text=f"Soil moisture in percentage ({SOIL_MOISTURE_MIN_VALUE}% - {SOIL_MOISTURE_MAX_VALUE}%)"
     )
     received_at = models.DateTimeField(
         auto_now_add=True,

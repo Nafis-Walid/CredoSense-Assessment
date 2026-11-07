@@ -1,224 +1,205 @@
-# Technical Explanation & Engineering Decisions
+# Technical Explanation & Engineering Decisions (EXPLANATION.md)
 
 **Candidate:** Md Nafis Walid  
-**Role:** Software Engineer (Mobile App Backend Management / IoT Integration)  
-**Company:** CredoSense  
-**Assessment Requirement:** Section 3 ("Explain your work")
+**Target Position:** Software Engineer at CredoSense  
+**Assessment:** Section 3 ("Explain your work") & Task 2: Option A ("Device simulator in C")  
 
 ---
 
 ## 1. What Was Unfamiliar, and How I Learned It
 
-Coming from a 2+ year R&D engineering background in C embedded firmware, switch operating systems, and network protocols (RFC-compliant TFTP server daemons, TR-069, and GPON/EPON ONUs), low-level memory buffers, bit-level operations, and POSIX socket architectures are second nature to me.
+Honestly speaking, the entire Django ecosystem was quite a new experience for me. Coming from a C and embedded systems background, I had not worked with web frameworks or ORMs before. So, defining database models in Python, running migrations to handle schema changes, and understanding how DRF serializers validate data before it even reaches the view—all these concepts were new to me and I had to learn them from scratch.
 
-However, developing within the **modern Django REST Framework (DRF) declarative ecosystem** presented unfamiliar paradigms:
-- Declarative Object-Relational Mapping (ORM) and automated schema migrations replacing raw SQL and manual C-struct database wrappers.
-- DRF Serializer validation pipelines, specifically how model constraints, custom field validators, and `is_valid()` interact before reaching view methods.
-- Dynamic timezone handling in Python (`django.utils.timezone`) vs. standard POSIX `time_t` epoch arithmetic.
-
-**How I Learned It:**
-- **Primary Source Documentation:** Consulted official Django 5/6 and Django REST Framework documentation on ModelSerializer validation flows, composite database constraints (`UniqueConstraint`), and timezone-aware datetime parsing.
-- **Mental Anchoring to Systems Concepts:** Anchored every new backend concept back to systems fundamentals:
-  - An ORM query is essentially a compiler generating parameterized SQL trees.
-  - A Serializer acts like a network packet deserializer/unpacker that checks length, type, and field bounds before allocating memory.
-  - Migrations are version-controlled DDL schema delta scripts.
-- **Hands-on Experimentation:** Built and broke features in a local REPL/test environment to observe actual runtime exceptions (`IntegrityError`, `ValidationError`) before finalizing code.
+My learning process was completely practical and three-fold:
+1. **Pair Programming Approach:** Discussed each concept thoroughly with the AI assistant, breaking down the requirements into small, manageable chunks.
+2. **Official Documentation:** Instead of blindly copying code, I referred directly to the official documentation of Django and Django REST Framework to understand the internal mechanics.
+3. **Hands-on Failure Testing in Terminal:** My biggest learning came from breaking things directly in the terminal. Rather than just reading theory, I deliberately sent invalid timestamps, missing timezones, and conflicting payloads to see what exact exceptions and stack traces get thrown at runtime. Once I saw things break and fixed them hands-on, the inner workings of the framework became completely clear in my mind.
 
 ---
 
 ## 2. How an Incoming Measurement Moves Through the Application
 
-The lifecycle of an incoming telemetry packet traverses a strictly gated, defense-in-depth pipeline:
+Our backend primarily handles three types of requests across three different endpoints—submitting telemetry, checking device status and active warnings, and viewing historical readings. 
+
+Whenever any request hits the server, Django first sends it to the main gate, which is the root URL configuration in `config/urls.py`. From there, `path('api/', include('monitoring.urls'))` forwards the traffic to our application router in `monitoring/urls.py`, which then dispatches the request to the respective view.
+
+Here is an end-to-end overview of the routing and data flow:
 
 ```
-[IoT Edge Device / C Simulator]
-               │
-               ▼  1. HTTP POST /api/measurements/ (JSON Payload)
-┌─────────────────────────────────────────────────────────────┐
-│ 2. Serialization & Boundary Validation (serializers.py)     │
-│    - Strips unauthorized fields (Mass Assignment Guard)     │
-│    - Validates ISO 8601 string + strict timezone ('Z' / ±HH)│
-│    - Rejects Epoch 1970 (uninitialized RTC clock)           │
-│    - Authoritative Event-Time (No server clock dependency)  │
-│    - Physical Envelope: Air/Leaf Temp (-40°C to +85°C)      │
-│    - Physical Envelope: Soil Moisture (0.0% to 100.0%)      │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ Validated Data
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 3. Ingestion & Idempotency Engine (views.py)                │
-│    - Query existing record by natural key: (device_id, ts)  │
-│    ├─► Found & Identical values (round to 2 decimals)       │
-│    │     └──► Return 200 OK (Idempotent Retry ACK)          │
-│    ├─► Found & Different values                             │
-│    │     └──► Return 409 Conflict (First-Write-Wins Guard)  │
-│    └─► Not Found                                            │
-│          └──► Try Insert into Database                      │
-│               └──► Catch IntegrityError (Race Condition)    │
-│                    └──► Re-fetch Winner & Verify Identity   │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ Saved (201 Created)
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 4. Relational Storage & Indexing (models.py / SQLite)       │
-│    - Inserted into 'monitoring_measurement' table           │
-│    - Auto-sorted in B-Tree index: idx_device_timestamp_desc │
-│    - Out-of-order packets immediately positioned in order   │
-└─────────────────────────────────────────────────────────────┘
-                               │ Queried on Demand
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 5. Warning Evaluation Engine (GET /api/devices/{id}/status/)│
-│    - Single query fetches latest 2 readings (LIMIT 2)       │
-│    - Dispatches through WARNING_EVALUATORS table:           │
-│      * evaluate_low_soil_moisture (Latest < 20.0%)          │
-│      * evaluate_heat_stress (Leaf >= Air + 4.0°C in BOTH)   │
-│    - Returns JSON with device status and active warnings    │
-└─────────────────────────────────────────────────────────────┘
+                          [ Client / IoT Simulator ]
+                                       │
+                                       ▼
+                       1. Main Gate: config/urls.py
+                                       │
+                                       ▼  (path: /api/...)
+                     2. App Router: monitoring/urls.py
+                                       │
+          ┌────────────────────────────┼────────────────────────────┐
+          │ (POST measurements/)       │ (GET devices/{id}/status/) │ (GET devices/{id}/history/)
+          ▼                            ▼                            ▼
+    [ Flow 1: Ingest Telemetry ]  [ Flow 2: Device Status ]    [ Flow 3: History Query ]
+    MeasurementIngestView         DeviceStatusView             DeviceHistoryView
+          │                            │                            │
+    Validate Input Data          Fetch Last 2 Readings        Set Query Bound Limit
+          │                            │                            │
+    Check Duplicates/Conflicts   Evaluate Warning Rules       Fetch Fast from B-Tree Index
+          │                            │                            │
+    Save to DB (201/200/409)     Return Status & Warnings     Return Time-Ordered History
 ```
+
+The detailed breakdown of these three flows is explained below:
 
 ---
 
-## 3. One Bug Encountered, How It Was Investigated, and How It Was Fixed
+### Flow 1: Ingesting Telemetry (`POST /api/measurements/`)
+When a field sensor or simulator sends telemetry data, it enters the `post()` method of `MeasurementIngestView` in `monitoring/views.py`:
 
-### The Bug: Concurrency Race Condition Masking Telemetry Conflicts
-During initial testing of conflicting duplicates under simulated concurrent requests, a critical logic flaw was discovered in `MeasurementIngestView`.
+1. **Input Validation (`serializers.py`):** The view hands over the payload to `MeasurementSerializer` and calls `serializer.is_valid()`. Inside the serializer, `validate_timestamp()` checks whether the timestamp contains explicit timezone information ('Z' or '+06:00'). If the timezone is missing, or if an uninitialized hardware clock sends an Epoch 1970 timestamp, it immediately raises a `ValidationError`. Next, air temperature and leaf temperature (-40°C to 85°C) and soil moisture (0% to 100%) are checked against realistic physical limits. If any value is out of bounds, the API rejects it with `400 Bad Request`.
+2. **Duplicate and Conflict Checking (`views.py`):** If the data is valid, the view queries the database: `Measurement.objects.filter(device_id=..., timestamp=...).first()` to check if a reading already exists for this device at this exact timestamp.
+   - If a record already exists, our helper function `is_telemetry_identical()` compares the values. To prevent tiny IEEE 754 floating-point precision differences, each field is rounded using `round(val, 2)`. If all values match, it means the packet is simply a network retry, and the server returns `200 OK` without creating duplicate rows.
+   - But if the timestamp matches while the temperature or moisture values are different, the server strictly returns `409 Conflict` to protect the integrity of the original measurement.
+   - If no record exists, `serializer.save()` creates a new entry in the database and returns `201 Created`.
+   - In case two identical requests arrive in the exact same millisecond and trigger a database-level `IntegrityError`, the `try-except` block safely fetches the winning record and verifies whether it is a duplicate or a conflict.
+3. **Database Storage (`models.py`):** The `UniqueConstraint` on `(device_id, timestamp)` in the `Measurement` model guarantees uniqueness at the database level. Additionally, the composite index `Index(fields=['device_id', '-timestamp'])` maintains records in reverse chronological order in the database B-Tree. As a result, even if buffered offline readings arrive hours late, they automatically fall into their correct historical position.
+
+---
+
+### Flow 2: Checking Device Status & Warnings (`GET /api/devices/{id}/status/`)
+When a user or mobile app wants to check the latest condition of a device, the request goes to `DeviceStatusView.get()`:
+
+1. The view queries the database for only the latest 2 records of that device (`.order_by('-timestamp')[:2]`).
+2. It then runs these records through our warning dispatch table `WARNING_EVALUATORS`:
+   - `evaluate_low_soil_moisture(records)` checks if soil moisture in the latest reading has dropped below 20%.
+   - `evaluate_heat_stress(records)` checks if both the last 2 consecutive readings have leaf temperature at least 4°C higher than air temperature (fewer than 2 readings cannot trigger heat stress).
+3. Finally, active warnings along with the latest measurement details are returned to the client as clean JSON.
+
+---
+
+### Flow 3: Querying Historical Data (`GET /api/devices/{id}/history/`)
+When a farmer or researcher wants to see historical trends, the request goes to `DeviceHistoryView.get()`:
+
+1. **Bounded Limits:** A user could pass `?limit=N` in the query parameter. If someone asks for 1 million records, it could easily exhaust server memory. Therefore, the view enforces safe limits—defaulting to 100 records if unspecified, and capping the maximum at 1000 records.
+2. **Fast B-Tree Retrieval:** Because of the `(device_id, -timestamp)` B-Tree index, the database engine does not do a full table scan. It directly fetches the required records in reverse chronological order in $O(\log N)$ time and returns them as a JSON array. Even out-of-order packets appear properly sorted by measurement time.
+
+---
+
+## 3. One Bug Encountered, Investigated, and Verified
+
+### The Bug:
+While testing idempotent network retries, an unexpected problem occurred. The requirement states that if a device sends the exact same packet with the same timestamp a second time, the server should acknowledge it with `200 OK`, indicating that the data is already stored safely.
+
+However, in reality, when we sent the exact duplicate packet from the terminal, the server immediately failed with `400 Bad Request`:
+```json
+{
+  "non_field_errors": [
+    "The fields device_id, timestamp must make a unique set."
+  ]
+}
+```
+The puzzling part was that our custom duplicate handling logic inside the view (`if existing: ...`) was not even executing; the request was getting rejected before reaching the view logic.
 
 ### Investigation:
-The original ingestion logic used a standard **"Check-Then-Act"** pattern:
+Digging into the framework internals revealed the root cause. 
+
+In our `Measurement` model, we had defined a database constraint: `UniqueConstraint(fields=['device_id', 'timestamp'])`. When Django REST Framework's `ModelSerializer` inspects the model, it automatically adds a hidden `UniqueTogetherValidator` to the serializer. 
+
+So, whenever `serializer.is_valid()` was called inside the view, the serializer itself checked the database and threw a validation error upon finding an existing record. It never gave our view code a chance to check whether the incoming payload was an identical retry or an invalid payload.
+
+### Fix and Verification:
+Once the cause was identified, the solution was straightforward—we needed to disable the serializer's automatic uniqueness check and handle it explicitly in the view.
+
+In `monitoring/serializers.py`, we added `validators = []` inside the `Meta` class:
 ```python
-existing = Measurement.objects.filter(device_id=..., timestamp=...).first()
-if existing:
-    # check identical vs conflict
+class MeasurementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Measurement
+        fields = [...]
+        read_only_fields = ['id', 'received_at']
+        validators = []  # Bypass automatic validator to handle idempotency in view
+```
+By setting `validators = []`, the serializer only validates field data types and ranges, leaving the uniqueness decision to our view and database layer. This restored full control to our view to return `200 OK` for identical retries and `409 Conflict` for mismatched values.
+
+We verified the fix by running the automated test `test_nw_01_idempotent_duplicate_retry`. The test passed cleanly, confirming that duplicate submissions no longer trigger a 400 error and properly return `200 OK` without creating extra database rows.
+
+---
+
+## 4. One Engineering Decision and an Alternative Considered
+
+### Decision Taken: Optimistic Concurrency Control via Database Constraints
+In IoT systems, thousands of devices transmit data continuously. During intermittent network fluctuations, two packets from the same device might hit the server in the exact same millisecond. To handle this race condition, instead of taking preemptive locks, we relied on **Optimistic Concurrency Control** backed by the database's unique constraint:
+
+```python
 try:
     serializer.save()
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
 except IntegrityError:
-    return Response(serializer.data, status=status.HTTP_200_OK) # <--- THE FLAW
-```
-
-When two concurrent requests for the same `(device_id, timestamp)` arrived within the same millisecond:
-1. Thread A checks `existing` $\rightarrow$ `None`.
-2. Thread B checks `existing` $\rightarrow$ `None` (Thread A hasn't committed yet).
-3. Thread A saves `air_temperature = 25.0` $\rightarrow$ `201 Created`.
-4. Thread B attempts to save **conflicting** data `air_temperature = 35.0` $\rightarrow$ Database raises `IntegrityError` due to `UniqueConstraint`.
-5. **The Flaw:** The `except IntegrityError:` handler blindly assumed the caught exception was an identical duplicate and returned `200 OK`! As a result, conflicting data was falsely acknowledged as successful duplicate ingestion, violating our First-Write-Wins audit rule.
-
-### Fix & Verification:
-Refactored the exception handler to re-fetch the committed winner record from the database and verify whether the incoming data was actually identical or conflicting:
-
-```python
-except IntegrityError:
-    # Handle concurrent race condition: re-fetch winner record and verify identity
+    # Handle concurrent race condition by re-fetching the winning record
     winner = Measurement.objects.filter(
         device_id=data["device_id"], timestamp=data["timestamp"]
     ).first()
     if winner and is_telemetry_identical(winner, data):
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(MeasurementSerializer(winner).data, status=status.HTTP_200_OK)
     return Response(
         {"detail": "Conflict: Telemetry for this timestamp already recorded with different values."},
         status=status.HTTP_409_CONFLICT,
     )
 ```
 
-**Verification:** Added an automated test `test_race_condition_conflict_handling_under_integrity_error` using `unittest.mock.patch` to simulate an `IntegrityError` with conflicting data. Verified that it strictly returns `409 Conflict`.
+The approach is simple: allow requests to insert directly. If two identical requests collide in the same millisecond, the database ACID engine lets one succeed and raises an `IntegrityError` on the second one. In the `except` block, we re-fetch the winning record from the database and verify whether the incoming packet is an identical duplicate (`200 OK`) or a conflicting submission (`409 Conflict`).
 
----
+### Alternative Considered: Pessimistic Locking (`select_for_update`) or Distributed Locks (Redis Mutex)
+The alternative approach was to acquire a database row-level lock (using `select_for_update()`) or use an in-memory distributed lock (via Redis Mutex) on the `(device_id, timestamp)` pair before checking or inserting any record.
 
-## 4. One Engineering Decision and an Alternative Considered
+### Trade-offs and Reasoning:
+In agricultural IoT, devices often transmit in synchronized bursts (e.g. at the top of every hour). Using pessimistic locks in such bursty environments introduces severe lock contention, exhausts database connection pools, and degrades overall system throughput. Furthermore, using a distributed lock like Redis introduces extra third-party infrastructure and maintenance complexity.
 
-### Decision: Strategy Pattern / C-Style Dispatch Table for Warning Rules
-
-**Chosen Solution:**
-Instead of hardcoding alert evaluations inside the view, each agronomic rule is encapsulated as a pure, decoupled evaluator function registered in an extensible dispatch table:
-
-```python
-def evaluate_low_soil_moisture(recent_records): ...
-def evaluate_heat_stress(recent_records): ...
-
-WARNING_EVALUATORS = [
-    evaluate_low_soil_moisture,
-    evaluate_heat_stress,
-]
-```
-
-In `DeviceStatusView`, rules are dynamically evaluated using Python's walrus operator:
-```python
-warnings = [
-    alert
-    for evaluate_rule in WARNING_EVALUATORS
-    if (alert := evaluate_rule(recent_records)) is not None
-]
-```
-
-### Alternative Considered: Procedural Hardcoded `if/elif/else` in View
-The alternative was writing sequential procedural checks directly inside `DeviceStatusView.get()`:
-```python
-warnings = []
-if recent_records[0].soil_moisture < 20.0:
-    warnings.append(...)
-if len(recent_records) == 2 and ...:
-    warnings.append(...)
-```
-
-### Trade-Off Analysis:
-| Criteria | Procedural `if/else` | Strategy Pattern (Chosen) |
-| :--- | :--- | :--- |
-| **Open/Closed Principle** | Violated (Must modify view to add rules) | Satisfied (Add function to list) |
-| **Unit Testability** | Harder (Must mock HTTP request to test rule) | Easy (Each function is pure and testable) |
-| **Live Interview Adaptability**| Risky (Editing view method during live coding) | Safe ($O(1)$ addition of a new rule in 2 lines) |
-| **Mental Model** | Web script pattern | Systems/Telecom dispatch table |
-
-**Verdict:** The dispatch table pattern was chosen because it cleanly decouples HTTP request handling from domain agronomic logic. If an interviewer asks to add a "Frost Warning" ($\text{Air} \le 0^\circ\text{C}$) or "High Humidity Alert" during the 30-minute review, it can be added in 2 lines of code without touching the view or risking regressions.
+In reality, sub-millisecond collisions for the same device and timestamp are rare edge cases. Sacrificing normal ingestion throughput for 99.9% of requests just to guard against a rare collision is poor engineering. Optimistic concurrency keeps the entire ingestion pipeline non-blocking and fast, while the database unique constraint safely guarantees data integrity when collisions do occur.
 
 ---
 
 ## 5. What I Would Improve Before Production Use
 
-If transitioning this prototype into a mission-critical commercial agricultural IoT cloud backend, I would implement:
+If taking this system to production for thousands of live agricultural devices in the cloud, I would focus on three practical improvements that I can personally vouch for and maintain:
 
-1. **Production Database & Time-Series Engine (PostgreSQL / TimescaleDB):**
-   - Replace SQLite with PostgreSQL enhanced by the **TimescaleDB** extension.
-   - Use automated **Hyper-tables** with monthly chunk partitioning on `timestamp` to ensure query performance remains constant even with billions of telemetry rows.
+1. **Device Authentication via Bearer Tokens:**
+   Currently, any client can send a JSON payload with an arbitrary `device_id` and the server accepts it. In production, we cannot allow unverified devices to write data. When a device is first provisioned or paired with the backend, it should be issued a unique **Device Token (Bearer Token)**. The device must pass this token in the HTTP `Authorization: Bearer <token>` header with every telemetry submission so the backend can verify device identity and reject unauthorized traffic.
 
-2. **mTLS & Hardware Device Authentication:**
-   - In production, devices cannot simply send arbitrary `device_id` strings unauthenticated.
-   - Implement mutual TLS (mTLS) with per-device X.509 client certificates or cryptographic HMAC signatures (e.g. SHA-256 tokens) embedded in device secure elements (ATECC608A).
+2. **Telemetry Downsampling & Automated Database Retention:**
+   If field devices send telemetry frequently (for instance, one reading every two seconds means 1,800 records per hour and over 43,000 records a day per device), the database will grow very large very quickly. Storing raw second-by-second readings forever slows down query response times and wastes disk space. Before going to production, I would set up a periodic cleanup job: raw high-frequency data would be kept for a rolling window (say, 7 days or 30 days for live charts), while older data would be summarized into daily averages (minimum, maximum, and average values) and the granular raw records would be safely cleaned up.
 
-3. **Asynchronous Ingestion Pipeline (RabbitMQ / Kafka + Celery):**
-   - Agricultural monitoring devices often transmit in synchronized bursts (e.g., at the top of the hour).
-   - Under burst conditions, synchronous database writes create connection pooling bottlenecks.
-   - An API Gateway should push incoming packets directly into an AMQP queue (RabbitMQ / Kafka), while Celery worker pools batch-insert them using bulk operations (`bulk_create(ignore_conflicts=True)`).
-
-4. **Telemetry Downsampling & Rollup Policies:**
-   - Real-time 1-minute telemetry is valuable for 30–90 days. Beyond that, raw data consumes unnecessary storage.
-   - Implement continuous aggregate jobs to downsample historical data into hourly and daily minimum, maximum, and average summaries.
-
-5. **Containerization & Production Deployment:**
-   - Package the backend with a multi-stage `Dockerfile` and `docker-compose.yml`.
-   - Run Gunicorn WSGI workers behind an Nginx reverse proxy with automated SSL certificate renewal (Let's Encrypt).
+3. **Device Pairing & Clock Synchronization (Cristian's Algorithm):**
+   In this prototype, we assume the device sends reasonably correct timestamps. But in field deployments, hardware RTC clocks can drift or lose power. When an edge device pairs with the backend, we can synchronize its hardware clock during the pairing handshake using **Cristian's Algorithm** (calculating the round-trip latency $\frac{RTT}{2}$ to set the device clock accurately to server time). With a properly synchronized clock, the backend can reliably detect if a packet has a future timestamp, or distinguish between normal delayed packets and massive network dropouts where thousands of readings were lost in transit.
 
 ---
 
 ## 6. AI Tools Used and How Output Was Checked
 
-### AI Tools Utilized:
-- **Google Antigravity AI Assistant:** Used as an interactive senior engineering pair-programmer for architectural sparring, boundary analysis, code reviews, and test design.
+In this project, I used the **Google Antigravity AI Assistant** as an interactive senior engineering pair-programmer to bounce ideas, discuss architecture, and analyze edge cases.
 
-### Output Verification & Quality Assurance Protocol:
-I adhered to an engineering principle: **"Never trust AI generated code without adversarial stress-testing."**
+However, I followed a strict engineering rule: **"Never trust AI-generated code without verifying it hands-on in the terminal."**
 
-1. **Adversarial Failure Reproduction:**
-   - Before accepting any validation logic, I deliberately forced the system to fail:
-     - Verified that omitting the timezone (`Z`) generated an explicit `400 Bad Request`.
-     - Verified that identical duplicates produced `200 OK` without database row count increasing.
-     - Verified that conflicting telemetry preserved the original value and responded with `409 Conflict`.
-2. **Low-Level Systems Grounding:**
-   - I reviewed AI code proposals through the lens of systems engineering:
-     - Discovered and corrected IEEE 754 floating-point precision hazards by introducing `round(val, 2)` comparison.
-     - Identified unhandled 4xx exception crashes in Python's standard `urllib.request` and wrapped them with explicit `HTTPError` handlers.
-     - Enforced standard C99 cross-platform macros (`gmtime_r` for POSIX, `gmtime_s` for Windows).
-3. **Automated Regression Suite:**
-   - All behavior was verified through an independent test suite of **18 automated tests** executed directly in the terminal via `./.venv/bin/python manage.py test`.
-   - Verified that the C simulator compiled with zero warnings under `-Wall -Wextra -O2 -std=c99` and successfully transmitted deterministic packets through the Python bridge.
+- **Terminal Verification:** Whenever the AI suggested validation logic or code patterns, I manually tested failure scenarios in the terminal—sending invalid dates, missing timezones, and extreme temperatures to confirm that filters behaved as expected.
+- **Handling Floating-Point Precision:** When checking duplicate records, I noticed that raw float comparisons (`==`) could fail due to IEEE 754 precision drift. I explicitly introduced `round(val, 2)` to make duplicate detection reliable.
+- **Automated Regression Suite:** All core behaviors, boundary values, and race conditions are guarded by **36 automated test vectors across 13 test suites** (mapped 1-to-1 to our test specification matrix), all of which run and pass cleanly via `python manage.py test`.
+- **C Simulator Verification:** Built the C simulator with `-Wall -Wextra -std=c99 -pedantic -O2` flags with zero compiler warnings, and verified all 9 deterministic scenarios end-to-end through the Python bridge.
 
-This rigorous verification ensures that every single line of code, constraint, and architectural choice is fully understood, reproducible, and ready for live defense during the 30-minute technical review.
+---
+
+## 7. Division of Reliability Responsibilities (Option A)
+
+In lossy agricultural IoT deployments, reliability cannot be guaranteed by a single layer. Responsibilities must be strictly partitioned across edge devices, local gateways, and the cloud backend:
+
+1. **Edge Device Responsibilities:**
+   - **Local Non-Volatile Buffering:** Preserve telemetry in offline Flash/EEPROM memory during cellular or radio blackouts instead of dropping readings.
+   - **Exponential Backoff Retries:** Avoid network flooding by exponentially increasing retransmission intervals until an acknowledgment (`200 OK` or `201 Created`) is received.
+   - **Sensor Sanity & ADC Glitch Filtering:** Filter obvious hardware shorts or disconnected probe readings locally (e.g. soil moisture > 100%) to conserve radio bandwidth and transmission power.
+   - **Hardware Event Timestamping:** Record exact physical sampling instants using a hardware Real-Time Clock (RTC) with explicit timezone offsets.
+
+2. **Local Gateway Responsibilities:**
+   - **Protocol Adaptation & Batching:** Aggregate lightweight raw radio packets (LoRaWAN, RS-485 Modbus) and translate them into secure HTTPS/JSON payloads for the cloud REST API.
+
+3. **Cloud Backend Responsibilities:**
+   - **Idempotency & Deduplication:** Safely identify network retransmissions via natural composite constraints (`UniqueConstraint`) without creating redundant database entries.
+   - **Chronological Re-Indexing (Out-of-Order Handling):** Automatically order delayed offline buffer flushes by event-time using database B-Tree indexes (`idx_device_timestamp_desc`) so history and alerts always reflect physical reality.
+   - **Audit Integrity (First-Write-Wins):** Preserve the original measurement when conflicting values arrive for the same timestamp (`409 Conflict`), maintaining an uncorrupted audit trail.
+   - **Agronomic Rule Evaluation:** Evaluate time-series conditions (low soil moisture and consecutive heat stress) and generate grower notifications.
